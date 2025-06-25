@@ -1,0 +1,115 @@
+name: Docker Local Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build VitePress site
+      run: npm run docs:build
+
+    - name: Prepare deployment files
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        source: ".,!node_modules,!.git,!docs/.vitepress/cache"
+        target: "/tmp/blog-deploy"
+        overwrite: true
+
+    - name: Build and deploy on server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          cd /tmp/blog-deploy
+          
+          echo "🛑 停止旧容器..."
+          docker stop zyx-blog 2>/dev/null || echo "容器不存在，跳过停止"
+          docker rm zyx-blog 2>/dev/null || echo "容器不存在，跳过删除"
+          
+          echo "🗑️ 删除旧镜像..."
+          docker rmi zyx-blog:latest 2>/dev/null || echo "镜像不存在，跳过删除"
+          
+          echo "🔨 构建新镜像..."
+          docker build -t zyx-blog:latest . --no-cache
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ 镜像构建失败"
+            exit 1
+          fi
+          
+          echo "📁 创建日志目录..."
+          mkdir -p ~/blog-logs
+          
+          echo "🚀 启动新容器..."
+          docker run -d \
+            --name zyx-blog \
+            --restart unless-stopped \
+            -p 80:80 \
+            -v ~/blog-logs:/var/log/nginx \
+            -e TZ=Asia/Shanghai \
+            zyx-blog:latest
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ 容器启动失败"
+            exit 1
+          fi
+          
+          echo "🧹 清理部署文件..."
+          rm -rf /tmp/blog-deploy
+          
+          echo "🧹 清理未使用的镜像..."
+          docker image prune -f
+          
+          echo "⏳ 等待服务启动..."
+          sleep 15
+          
+          echo "🔍 检查容器状态..."
+          if docker ps --format 'table {{.Names}}' | grep -q "^zyx-blog$"; then
+            echo "✅ 容器运行正常"
+            
+            # 健康检查
+            if curl -f http://localhost/health 2>/dev/null; then
+              echo "✅ 健康检查通过"
+              echo "🎉 部署成功！"
+            else
+              echo "⚠️ 健康检查失败，但容器正在运行"
+              echo "可能服务还在启动中，请稍后访问网站检查"
+            fi
+            
+            # 显示容器信息
+            echo "📊 容器状态："
+            docker ps --filter name=zyx-blog --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
+            # 显示最近日志
+            echo "📝 最近日志："
+            docker logs zyx-blog --tail 10
+            
+          else
+            echo "❌ 容器未运行"
+            echo "📝 容器日志："
+            docker logs zyx-blog 2>/dev/null || echo "无法获取日志"
+            exit 1
+          fi 
