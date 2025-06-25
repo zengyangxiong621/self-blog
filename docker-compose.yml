@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  blog:
+    build: .
+    container_name: zyx-blog
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    volumes:
+      - ./logs:/var/log/nginx
+    environment:
+      - TZ=Asia/Shanghai
+    labels:
+      - "com.docker.compose.project=zyx-blog"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # 可选：添加 SSL 证书自动更新
+  certbot:
+    image: certbot/certbot:latest
+    container_name: zyx-blog-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    profiles:
+      - ssl
+    command: certonly --webroot -w /var/www/certbot --force-renewal --email your-email@example.com -d your-domain.com --agree-tos
+
+networks:
+  default:
+    name: blog-network 

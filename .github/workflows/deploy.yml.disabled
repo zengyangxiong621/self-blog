@@ -1,0 +1,93 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build VitePress site
+      run: npm run docs:build
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: docs/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist
+
+    - name: Deploy to server via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          # 创建备份
+          sudo mkdir -p /var/backups/blog
+          if [ -d "/var/www/blog" ]; then
+            sudo cp -r /var/www/blog /var/backups/blog/backup-$(date +%Y%m%d_%H%M%S)
+          fi
+          
+          # 创建目标目录
+          sudo mkdir -p /var/www/blog
+          sudo chown -R ${{ secrets.USERNAME }}:${{ secrets.USERNAME }} /var/www/blog
+          
+          # 清理旧文件
+          rm -rf /var/www/blog/*
+
+    - name: Copy files to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        source: "dist/*"
+        target: "/var/www/blog"
+        strip_components: 1
+
+    - name: Set proper permissions
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          sudo chown -R www-data:www-data /var/www/blog
+          sudo chmod -R 755 /var/www/blog
+          
+          # 重启 Nginx（如果需要）
+          sudo systemctl reload nginx 
