@@ -7,14 +7,17 @@ WORKDIR /app
 # 复制 package 文件
 COPY package*.json ./
 
-# 安装依赖
-RUN npm ci --only=production
+# 安装依赖（包括开发依赖，构建时需要）
+RUN npm ci
 
 # 复制源代码
 COPY . .
 
 # 构建项目
 RUN npm run docs:build
+
+# 清理 node_modules 以减小镜像大小
+RUN rm -rf node_modules
 
 # 生产阶段 - 使用 Nginx 提供静态文件服务
 FROM nginx:alpine
