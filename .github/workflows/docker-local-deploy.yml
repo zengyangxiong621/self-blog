@@ -1,96 +1,132 @@
+# 工作流名称：Docker 本地构建和部署
 name: Docker Local Build and Deploy
 
+# 触发条件：当代码推送到 main 分支时自动执行
 on:
   push:
     branches: [ main ]
 
 jobs:
   deploy:
+    # 使用 GitHub 提供的 Ubuntu 最新版本虚拟机
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout
+    # 步骤1：检出代码
+    # 作用：从 GitHub 仓库下载最新的源代码到 GitHub Actions 虚拟机
+    - name: 检出代码
       uses: actions/checkout@v4
 
-    - name: Setup Node.js
+    # 步骤2：设置 Node.js 环境
+    # 作用：安装 Node.js 18 版本，并启用 npm 缓存以加速后续构建
+    - name: 设置 Node.js 环境
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
-        cache: 'npm'
+        node-version: '18'        # 使用 Node.js 18 版本
+        cache: 'npm'              # 缓存 npm 依赖，加速构建
 
-    - name: Install dependencies
-      run: npm ci
+    # 步骤3：安装项目依赖
+    # 作用：根据 package-lock.json 安装所有必需的 npm 包
+    - name: 安装项目依赖
+      run: npm ci                 # npm ci 比 npm install 更快，适合 CI/CD
 
-    - name: Build VitePress site
-      run: npm run docs:build
+    # 步骤4：构建 VitePress 网站
+    # 作用：将 Markdown 文档编译成静态 HTML 网站，输出到 docs/.vitepress/dist
+    - name: 构建 VitePress 网站
+      run: npm run docs:build     # 执行构建命令，生成静态文件
 
-    - name: Prepare deployment files
+    # 步骤5：传输文件到服务器
+    # 作用：将项目文件（包括源码和构建产物）复制到服务器的临时目录
+    - name: 传输部署文件到服务器
       uses: appleboy/scp-action@v0.1.7
       with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.PRIVATE_KEY }}
-        port: ${{ secrets.PORT }}
-        source: ".,!node_modules,!.git,!docs/.vitepress/cache"
-        target: "/tmp/blog-deploy"
-        overwrite: true
+        host: ${{ secrets.HOST }}           # 服务器 IP 地址（从 GitHub Secrets 获取）
+        username: ${{ secrets.USERNAME }}   # SSH 用户名（从 GitHub Secrets 获取）
+        key: ${{ secrets.PRIVATE_KEY }}     # SSH 私钥（从 GitHub Secrets 获取）
+        port: ${{ secrets.PORT }}           # SSH 端口（从 GitHub Secrets 获取）
+        source: ".,!node_modules,!.git,!docs/.vitepress/cache"  # 传输所有文件，但排除不必要的目录
+        target: "/tmp/blog-deploy"          # 服务器上的目标目录
+        overwrite: true                     # 覆盖已存在的文件
 
-    - name: Build and deploy on server
+    # 步骤6：在服务器上构建和部署
+    # 作用：连接到服务器，构建 Docker 镜像并启动新容器
+    - name: 在服务器上构建和部署
       uses: appleboy/ssh-action@v1.0.3
       with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.PRIVATE_KEY }}
-        port: ${{ secrets.PORT }}
+        host: ${{ secrets.HOST }}           # 服务器 IP 地址
+        username: ${{ secrets.USERNAME }}   # SSH 用户名
+        key: ${{ secrets.PRIVATE_KEY }}     # SSH 私钥
+        port: ${{ secrets.PORT }}           # SSH 端口
         script: |
+          # 进入部署目录（之前传输文件的位置）
           cd /tmp/blog-deploy
           
+          # === 清理阶段 ===
           echo "🛑 停止旧容器..."
+          # 停止名为 zyx-blog 的容器，如果不存在则忽略错误
           docker stop zyx-blog 2>/dev/null || echo "容器不存在，跳过停止"
+          
+          # 删除旧容器，释放资源
           docker rm zyx-blog 2>/dev/null || echo "容器不存在，跳过删除"
           
           echo "🗑️ 删除旧镜像..."
+          # 删除旧的镜像，为新镜像腾出空间
           docker rmi zyx-blog:latest 2>/dev/null || echo "镜像不存在，跳过删除"
           
+          # === 构建阶段 ===
           echo "🔨 构建新镜像..."
+          # 使用 Dockerfile 构建新的 Docker 镜像
+          # --no-cache: 不使用缓存，确保获取最新内容
           docker build -t zyx-blog:latest . --no-cache
           
+          # 检查构建是否成功
           if [ $? -ne 0 ]; then
             echo "❌ 镜像构建失败"
-            exit 1
+            exit 1  # 如果构建失败，终止部署
           fi
           
+          # === 准备阶段 ===
           echo "📁 创建日志目录..."
+          # 创建用于存储 Nginx 日志的目录
           mkdir -p ~/blog-logs
           
+          # === 启动阶段 ===
           echo "🚀 启动新容器..."
+          # 启动新的 Docker 容器
           docker run -d \
-            --name zyx-blog \
-            --restart unless-stopped \
-            -p 80:80 \
-            -v ~/blog-logs:/var/log/nginx \
-            -e TZ=Asia/Shanghai \
-            zyx-blog:latest
+            --name zyx-blog \                    # 容器名称
+            --restart unless-stopped \           # 自动重启策略：除非手动停止，否则总是重启
+            -p 80:80 \                          # 端口映射：主机80端口 -> 容器80端口
+            -v ~/blog-logs:/var/log/nginx \     # 卷挂载：将容器内的日志目录挂载到主机
+            -e TZ=Asia/Shanghai \               # 环境变量：设置时区为上海
+            zyx-blog:latest                     # 使用刚构建的镜像
           
+          # 检查容器是否启动成功
           if [ $? -ne 0 ]; then
             echo "❌ 容器启动失败"
-            exit 1
+            exit 1  # 如果启动失败，终止部署
           fi
           
+          # === 清理阶段 ===
           echo "🧹 清理部署文件..."
+          # 删除临时部署文件，节省磁盘空间
           rm -rf /tmp/blog-deploy
           
           echo "🧹 清理未使用的镜像..."
+          # 清理悬空镜像（dangling images），节省磁盘空间
           docker image prune -f
           
+          # === 验证阶段 ===
           echo "⏳ 等待服务启动..."
+          # 等待15秒，让容器完全启动
           sleep 15
           
           echo "🔍 检查容器状态..."
+          # 检查容器是否正在运行
           if docker ps --format 'table {{.Names}}' | grep -q "^zyx-blog$"; then
             echo "✅ 容器运行正常"
             
-            # 健康检查
+            # 健康检查：测试网站是否响应
             if curl -f http://localhost/health 2>/dev/null; then
               echo "✅ 健康检查通过"
               echo "🎉 部署成功！"
@@ -99,17 +135,18 @@ jobs:
               echo "可能服务还在启动中，请稍后访问网站检查"
             fi
             
-            # 显示容器信息
+            # 显示容器详细信息
             echo "📊 容器状态："
             docker ps --filter name=zyx-blog --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
             
-            # 显示最近日志
+            # 显示容器最近的日志，用于调试
             echo "📝 最近日志："
             docker logs zyx-blog --tail 10
             
           else
+            # 如果容器没有运行，显示错误信息
             echo "❌ 容器未运行"
             echo "📝 容器日志："
             docker logs zyx-blog 2>/dev/null || echo "无法获取日志"
-            exit 1
+            exit 1  # 部署失败，返回错误状态
           fi 
