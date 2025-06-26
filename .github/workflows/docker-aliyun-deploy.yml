@@ -84,6 +84,14 @@ jobs:
           echo "🗑️ 删除旧镜像..."
           docker rmi $IMAGE_URL 2>/dev/null || echo "镜像不存在，跳过删除"
           
+          echo "🔐 登录阿里云容器镜像服务..."
+          echo "${{ secrets.ALIYUN_PASSWORD }}" | docker login ${{ env.ALIYUN_REGISTRY }} --username "${{ secrets.ALIYUN_USERNAME }}" --password-stdin
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ 阿里云登录失败"
+            exit 1
+          fi
+          
           echo "📥 拉取新镜像..."
           docker pull $IMAGE_URL
           
