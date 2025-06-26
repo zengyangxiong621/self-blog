@@ -1,0 +1,136 @@
+# 工作流名称：使用阿里云容器镜像服务的 Docker 部署
+name: Docker Build and Deploy (Aliyun ACR)
+
+# 触发条件：当代码推送到 main 分支时自动执行
+on:
+  push:
+    branches: [ main ]
+
+env:
+  # 阿里云镜像仓库配置
+  # 请根据您的实际可用地域修改 ALIYUN_REGISTRY：
+  ALIYUN_REGISTRY: registry.cn-hangzhou.aliyuncs.com  # 常见可用地域：
+  # registry.cn-hangzhou.aliyuncs.com   (华东1-杭州)
+  # registry.cn-shanghai.aliyuncs.com   (华东2-上海)  
+  # registry.cn-beijing.aliyuncs.com    (华北2-北京)
+  ALIYUN_NAMESPACE: zengyangxiong                  # 您创建的命名空间名称
+  IMAGE_NAME: zyx-blog                               # 您创建的镜像仓库名称
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 步骤1：检出代码
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    # 步骤2：设置 Node.js 环境
+    - name: 设置 Node.js 环境
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    # 步骤3：安装项目依赖
+    - name: 安装项目依赖
+      run: npm ci
+
+    # 步骤4：构建 VitePress 网站
+    - name: 构建 VitePress 网站
+      run: npm run docs:build
+
+    # 步骤5：设置 Docker Buildx
+    - name: 设置 Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # 步骤6：登录阿里云容器镜像服务
+    - name: 登录阿里云容器镜像服务
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.ALIYUN_REGISTRY }}
+        username: ${{ secrets.ALIYUN_USERNAME }}
+        password: ${{ secrets.ALIYUN_PASSWORD }}
+
+    # 步骤7：构建并推送 Docker 镜像
+    - name: 构建并推送 Docker 镜像
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
+          ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # 步骤8：部署到服务器
+    - name: 部署到服务器
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          # 设置镜像地址
+          IMAGE_URL="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest"
+          
+          echo "🛑 停止旧容器..."
+          docker stop zyx-blog 2>/dev/null || echo "容器不存在，跳过停止"
+          docker rm zyx-blog 2>/dev/null || echo "容器不存在，跳过删除"
+          
+          echo "🗑️ 删除旧镜像..."
+          docker rmi $IMAGE_URL 2>/dev/null || echo "镜像不存在，跳过删除"
+          
+          echo "📥 拉取新镜像..."
+          docker pull $IMAGE_URL
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ 镜像拉取失败"
+            exit 1
+          fi
+          
+          echo "📁 创建日志目录..."
+          mkdir -p ~/blog-logs
+          
+          echo "🚀 启动新容器..."
+          docker run -d \
+            --name zyx-blog \
+            --restart unless-stopped \
+            -p 80:80 \
+            -v ~/blog-logs:/var/log/nginx \
+            -e TZ=Asia/Shanghai \
+            $IMAGE_URL
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ 容器启动失败"
+            exit 1
+          fi
+          
+          echo "🧹 清理未使用的镜像..."
+          docker image prune -f
+          
+          echo "⏳ 等待服务启动..."
+          sleep 15
+          
+          echo "🔍 检查容器状态..."
+          if docker ps --format 'table {{.Names}}' | grep -q "^zyx-blog$"; then
+            echo "✅ 容器运行正常"
+            
+            if curl -f http://localhost/health 2>/dev/null; then
+              echo "✅ 健康检查通过"
+              echo "🎉 部署成功！"
+            else
+              echo "⚠️ 健康检查失败，但容器正在运行"
+            fi
+            
+            echo "📊 容器状态："
+            docker ps --filter name=zyx-blog --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
+          else
+            echo "❌ 容器未运行"
+            docker logs zyx-blog 2>/dev/null || echo "无法获取日志"
+            exit 1
+          fi 
