@@ -23,6 +23,7 @@ export default defineConfig({
           { text: '性能优化', link: '/framework/performance/' }
         ]
       },
+      { text: '工程化', link: '/engineering/' },
       { text: '高级进阶',
         items: [
           { text: '前端安全', link: '/advanced/security/' },
@@ -53,11 +54,32 @@ export default defineConfig({
           text: 'JavaScript',
           items: [
             { text: 'JS基础概念', link: '/frontend/javascript/basics' },
+            { text: 'JavaScript 基础大全', link: '/frontend/javascript/fundamentals' },
+            { text: '数据类型', link: '/frontend/javascript/data-types/' },
+            { text: '内存管理', link: '/frontend/javascript/memory/' },
             { text: '异步编程', link: '/frontend/javascript/async' },
             { text: '面向对象', link: '/frontend/javascript/oop' },
             { text: '函数式编程', link: '/frontend/javascript/functional' },
             { text: 'ES6+特性', link: '/frontend/javascript/es6' },
             { text: '迭代器详解', link: '/frontend/javascript/iterator' }
+          ]
+        }
+      ],
+      '/frontend/javascript/data-types/': [
+        {
+          text: 'JavaScript 数据类型',
+          items: [
+            { text: '数据类型概览', link: '/frontend/javascript/data-types/' },
+            { text: 'Symbol 详解', link: '/frontend/javascript/data-types/symbol/' }
+          ]
+        }
+      ],
+      '/frontend/javascript/memory/': [
+        {
+          text: 'JavaScript 内存管理',
+          items: [
+            { text: '内存管理概览', link: '/frontend/javascript/memory/' },
+            { text: '内存介绍', link: '/frontend/javascript/memory/memory-introduction' }
           ]
         }
       ],
@@ -67,7 +89,8 @@ export default defineConfig({
           items: [
             { text: '渲染过程', link: '/frontend/browser/rendering' },
             { text: '事件机制', link: '/frontend/browser/events' },
-            { text: '存储机制', link: '/frontend/browser/storage' }
+            { text: '存储机制', link: '/frontend/browser/storage' },
+            { text: '事件循环机制', link: '/frontend/browser/event-loop' }
           ]
         }
       ],
@@ -104,7 +127,17 @@ export default defineConfig({
           ]
         }
       ],
-      '/advanced/': [
+      '/framework/performance/': [
+        {
+          text: '性能优化',
+          items: [
+            { text: '首屏渲染优化', link: '/framework/performance/first-paint-metrics' },
+            { text: '资源加载优化', link: '/framework/performance/resource-loading' },
+            { text: '运行时性能', link: '/framework/performance/runtime' }
+          ]
+        }
+      ],
+      '/advanced/security/': [
         {
           text: '前端安全',
           items: [
@@ -112,13 +145,33 @@ export default defineConfig({
             { text: 'CSRF防护', link: '/advanced/security/csrf' },
             { text: '加密算法', link: '/advanced/security/encryption' }
           ]
-        },
+        }
+      ],
+      '/advanced/design-pattern/': [
         {
           text: '设计模式',
           items: [
             { text: '创建型模式', link: '/advanced/design-pattern/creational' },
             { text: '结构型模式', link: '/advanced/design-pattern/structural' },
             { text: '行为型模式', link: '/advanced/design-pattern/behavioral' }
+          ]
+        }
+      ],
+      '/advanced/algorithm/': [
+        {
+          text: '算法与数据结构',
+          items: [
+            { text: '经典算法100题', link: '/advanced/algorithm/classic-100' },
+            { text: '数据结构详解', link: '/advanced/algorithm/data-structures' },
+            { text: '算法思想总结', link: '/advanced/algorithm/algorithms' }
+          ]
+        }
+      ],
+      '/engineering/': [
+        {
+          text: '前端工程化',
+          items: [
+            { text: 'Docker容器化', link: '/engineering/docker/' }
           ]
         }
       ]
